@@ -5,6 +5,41 @@
     const UPLOAD_URL = (window.editbored && window.editbored.uploadUrl) ? window.editbored.uploadUrl : '';
     const CSRF = (window.editbored && window.editbored.csrfToken) ? window.editbored.csrfToken : '';
 
+    // Strip dangerous markup from rendered HTML (defence in depth alongside the
+    // server-side sanitizer). marked does not sanitize output by default.
+    function sanitizeRendered(html) {
+        var tpl = document.createElement('template');
+        tpl.innerHTML = html;
+        var walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_ELEMENT, null, false);
+        var nodes = [];
+        var n;
+        while ((n = walker.nextNode())) { nodes.push(n); }
+        nodes.forEach(function (el) {
+            var tag = el.tagName.toLowerCase();
+            if (tag === 'script' || tag === 'style' || tag === 'iframe' || tag === 'object' || tag === 'embed' || tag === 'form') {
+                el.parentNode && el.parentNode.removeChild(el);
+                return;
+            }
+            Array.prototype.slice.call(el.attributes).forEach(function (attr) {
+                var name = attr.name.toLowerCase();
+                var val = (attr.value || '').replace(/\s+/g, '').toLowerCase();
+                if (name.indexOf('on') === 0) {
+                    el.removeAttribute(attr.name);
+                } else if ((name === 'href' || name === 'src') &&
+                    (val.indexOf('javascript:') === 0 || val.indexOf('data:') === 0 || val.indexOf('vbscript:') === 0)) {
+                    el.removeAttribute(attr.name);
+                }
+            });
+            if (tag === 'a') {
+                el.setAttribute('rel', 'noopener noreferrer');
+                if (el.getAttribute('target') === '_blank') {
+                    el.setAttribute('rel', 'noopener noreferrer');
+                }
+            }
+        });
+        return tpl.innerHTML;
+    }
+
     var icons = {
         bold: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path></svg>',
         italic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="4" x2="10" y2="4"></line><line x1="14" y1="20" x2="5" y2="20"></line><line x1="15" y1="4" x2="9" y2="20"></line></svg>',
@@ -113,7 +148,7 @@
                 editor.innerHTML = ta.value;
             } else if (typeof marked !== 'undefined') {
                 // Content is markdown, parse with marked
-                editor.innerHTML = marked.parse(ta.value);
+                editor.innerHTML = sanitizeRendered(marked.parse(ta.value));
             } else {
                 editor.textContent = ta.value;
             }
@@ -319,7 +354,7 @@
             if (backBtn) backBtn.style.display = 'none';
             // Parse markdown back to HTML
             if (typeof marked !== 'undefined' && markdownDisplay.value) {
-                editor.innerHTML = marked.parse(markdownDisplay.value);
+                editor.innerHTML = sanitizeRendered(marked.parse(markdownDisplay.value));
             }
             editor.focus();
         } else {
@@ -713,7 +748,8 @@
             // Check if content is already HTML (saved by new method)
             var html = container.innerHTML;
             if (/<[a-z][\s\S]*>/i.test(html)) {
-                // Content is already HTML, just mark as rendered
+                // Content is already HTML (server-sanitized); re-sanitize client-side.
+                container.innerHTML = sanitizeRendered(html);
                 container.setAttribute('data-rendered', 'true');
                 return;
             }
@@ -725,11 +761,8 @@
             }
             container.setAttribute('data-raw', raw);
             try {
-                if (marked.parse) {
-                    container.innerHTML = marked.parse(raw);
-                } else if (typeof marked === 'function') {
-                    container.innerHTML = marked(raw);
-                }
+                var rendered = marked.parse ? marked.parse(raw) : (typeof marked === 'function' ? marked(raw) : raw);
+                container.innerHTML = sanitizeRendered(rendered);
                 container.setAttribute('data-rendered', 'true');
             } catch(e) {
                 console.error('editbored: Error rendering markdown:', e);
