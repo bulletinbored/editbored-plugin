@@ -50,4 +50,26 @@ function editbored_init() {
     $pluginManager->addHook('footer_before_render', function() use ($footer) {
         echo $footer;
     });
+
+    // Notify users mentioned with @username in a new post (case 7).
+    // Hook signature: after_post($threadId, $postId)
+    $pluginManager->addHook('after_post', function($threadId, $postId) {
+        $pdo = $GLOBALS['pdo'] ?? null;
+        if (!$pdo) {
+            return;
+        }
+        $stmt = $pdo->prepare("
+            SELECT p.content, t.title, u.username AS author
+            FROM posts p
+            JOIN threads t ON p.thread_id = t.id
+            LEFT JOIN users u ON p.user_id = u.id
+            WHERE p.id = ?
+        ");
+        $stmt->execute([(int)$postId]);
+        $post = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$post) {
+            return;
+        }
+        notify_mentioned_users($pdo, $post['content'], (int)$threadId, $post['title'], $post['author'] ?? 'Someone');
+    });
 }

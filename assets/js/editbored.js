@@ -16,9 +16,26 @@
         while ((n = walker.nextNode())) { nodes.push(n); }
         nodes.forEach(function (el) {
             var tag = el.tagName.toLowerCase();
-            if (tag === 'script' || tag === 'style' || tag === 'iframe' || tag === 'object' || tag === 'embed' || tag === 'form') {
+            if (tag === 'script' || tag === 'style' || tag === 'object' || tag === 'embed' || tag === 'form') {
                 el.parentNode && el.parentNode.removeChild(el);
                 return;
+            }
+            if (tag === 'iframe') {
+                // Keep only known embed hosts (defence in depth with the server).
+                var src = (el.getAttribute('src') || '');
+                try {
+                    var host = new URL(src, location.href).hostname.toLowerCase();
+                    var okHosts = ['www.youtube.com', 'youtube.com', 'www.youtube-nocookie.com',
+                        'youtube-nocookie.com', 'platform.twitter.com',
+                        'www.facebook.com', 'facebook.com', 'www.instagram.com', 'instagram.com'];
+                    if (okHosts.indexOf(host) === -1) {
+                        el.parentNode && el.parentNode.removeChild(el);
+                        return;
+                    }
+                } catch (e) {
+                    el.parentNode && el.parentNode.removeChild(el);
+                    return;
+                }
             }
             Array.prototype.slice.call(el.attributes).forEach(function (attr) {
                 var name = attr.name.toLowerCase();
@@ -508,7 +525,7 @@
             var tid = match ? match[1] : '';
             if (!tid) return null;
             return '<div class="link-preview link-preview--twitter" style="background:#000;border-radius:12px;overflow:hidden;">' +
-                '<iframe src="https://platform.twitter.com/embed/Tweet.html?id=' + tid + '" style="border:none;width:100%;height:350px;display:block;"></iframe></div>';
+                '<iframe src="https://platform.twitter.com/embed/Tweet.html?id=' + tid + '" style="border:none;width:100%;height:450px;display:block;background:#fff;"></iframe></div>';
         }
         if (type === 'instagram') {
             return '<div class="link-preview link-preview--instagram" style="min-height:400px;background:#fff;border:1px solid #dbdbdb;border-radius:12px;overflow:hidden;">' +
@@ -523,8 +540,9 @@
                 '<div style="padding:12.5% 0;"></div></a></div></blockquote></div>';
         }
         if (type === 'facebook') {
-            return '<div class="link-preview link-preview--facebook" style="min-height:200px;background:#f0f2f5;border-radius:12px;overflow:hidden;padding:16px;display:flex;align-items:center;justify-content:center;">' +
-                '<div class="fb-post" data-href="' + url + '" data-width="540" data-show-text="false" style="width:100%;"></div></div>';
+            var fbHref = url.replace(/\?.*$/, '');
+            return '<div class="link-preview link-preview--facebook" style="min-height:200px;background:#f0f2f5;border-radius:12px;overflow:hidden;">' +
+                '<iframe src="https://www.facebook.com/plugins/post.php?href=' + encodeURIComponent(fbHref) + '&width=540&show_text=true&appId&height=540" style="border:none;overflow:hidden;width:100%;min-height:540px;display:block;background:#fff;" scrolling="no" frameborder="0" allowfullscreen allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe></div>';
         }
         if (type === 'image') {
             return '<div class="link-preview link-preview--image" style="border-radius:12px;overflow:hidden;margin:0.6em 0;">' +
@@ -541,6 +559,45 @@
                 '<div style="font-size:12px;color:#888;margin-top:2px;">' + domain + '</div></div></a></div>';
         }
         return null;
+    }
+
+    function buildEmbedWrapper(url, type, withRemoveBtn, editor) {
+        var embedHtml = createEmbedHTML(url, type);
+        if (!embedHtml) return null;
+
+        var wrapper = document.createElement('div');
+        wrapper.className = 'link-preview-wrap';
+        wrapper.setAttribute('data-url', url);
+        wrapper.style.cssText = 'position:relative;margin:0.8em 0;';
+        if (withRemoveBtn) wrapper.contentEditable = 'false';
+        wrapper.innerHTML = embedHtml;
+
+        if (withRemoveBtn) {
+            var removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.innerHTML = '✕';
+            removeBtn.style.cssText = 'position:absolute;top:-10px;right:-10px;width:28px;height:28px;border-radius:50%;background:#ff3b30;border:2px solid #fff;color:#fff;font-size:14px;font-weight:bold;cursor:pointer;z-index:100;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1;';
+            removeBtn.title = 'Remove preview';
+            removeBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var next = wrapper.nextSibling;
+                wrapper.remove();
+                if (next) {
+                    next.focus();
+                    var r = document.createRange();
+                    r.setStart(next, 0);
+                    r.collapse(true);
+                    var s = window.getSelection();
+                    s.removeAllRanges();
+                    s.addRange(r);
+                } else if (editor) {
+                    editor.focus();
+                }
+            });
+            wrapper.appendChild(removeBtn);
+        }
+
+        return wrapper;
     }
 
     function convertUrlsToEmbeds(editor) {
@@ -566,38 +623,8 @@
                     range.setStart(textNode, idx);
                     range.setEnd(textNode, idx + url.length);
 
-                    var embedHtml = createEmbedHTML(url, type);
-                    if (!embedHtml) return;
-
-                    var wrapper = document.createElement('div');
-                    wrapper.className = 'link-preview-wrap';
-                    wrapper.contentEditable = 'false';
-                    wrapper.setAttribute('data-url', url);
-                    wrapper.style.cssText = 'position:relative;margin:0.8em 0;';
-                    wrapper.innerHTML = embedHtml;
-
-                    var removeBtn = document.createElement('button');
-                    removeBtn.type = 'button';
-                    removeBtn.innerHTML = '✕';
-                    removeBtn.style.cssText = 'position:absolute;top:-10px;right:-10px;width:28px;height:28px;border-radius:50%;background:#ff3b30;border:2px solid #fff;color:#fff;font-size:14px;font-weight:bold;cursor:pointer;z-index:100;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1;';
-                    removeBtn.title = 'Remove preview';
-                    removeBtn.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                        var next = wrapper.nextSibling;
-                        wrapper.remove();
-                        if (next) {
-                            next.focus();
-                            var r = document.createRange();
-                            r.setStart(next, 0);
-                            r.collapse(true);
-                            var s = window.getSelection();
-                            s.removeAllRanges();
-                            s.addRange(r);
-                        } else {
-                            editor.focus();
-                        }
-                    });
-                    wrapper.appendChild(removeBtn);
+                    var wrapper = buildEmbedWrapper(url, type, true, editor);
+                    if (!wrapper) return;
 
                     range.deleteContents();
                     range.insertNode(wrapper);
@@ -719,19 +746,16 @@
                         range.setStart(textNode, idx);
                         range.setEnd(textNode, idx + url.length);
 
-                        var embedHtml = createEmbedHTML(url, type);
-                        if (!embedHtml) return;
+                    var embedHtml = createEmbedHTML(url, type);
+                    if (!embedHtml) return;
 
-                        var wrapper = document.createElement('div');
-                        wrapper.className = 'link-preview-wrap';
-                        wrapper.setAttribute('data-url', url);
-                        wrapper.style.cssText = 'position:relative;margin:0.8em 0;';
-                        wrapper.innerHTML = embedHtml;
+                    var wrapper = buildEmbedWrapper(url, type, false);
+                    if (!wrapper) return;
 
-                        range.deleteContents();
-                        range.insertNode(wrapper);
+                    range.deleteContents();
+                    range.insertNode(wrapper);
 
-                        processSocialEmbeds(wrapper, type);
+                    processSocialEmbeds(wrapper, type);
                     }
                 }
             });
