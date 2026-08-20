@@ -131,7 +131,7 @@
 
         var markdownDisplay = document.createElement('textarea');
         markdownDisplay.className = 'editbored-markdown-display';
-        markdownDisplay.style.cssText = 'display:none;width:100%;min-height:300px;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;padding:12px 16px;font-family:monospace;font-size:14px;background:#f8f9fa;color:#333;resize:vertical;box-sizing:border-box;';
+        markdownDisplay.style.cssText = 'display:none;width:100%;min-height:300px;border:1px solid #e0e0e0;border-top:1px solid #e0e0e0;border-radius:8px 8px 0 0;padding:12px 16px;font-family:monospace;font-size:14px;background:#f8f9fa;color:#333;resize:vertical;box-sizing:border-box;';
         markdownDisplay.readOnly = true;
 
         var backBtn = document.createElement('button');
@@ -148,9 +148,9 @@
         progressBar.className = 'editbored-progress-bar';
         progress.appendChild(progressBar);
 
-        wrap.appendChild(toolbar);
         wrap.appendChild(editor);
         wrap.appendChild(markdownDisplay);
+        wrap.appendChild(toolbar);
         wrap.appendChild(backBtn);
         wrap.appendChild(progress);
 
@@ -379,6 +379,7 @@
             markdownDisplay.value = htmlToMarkdown(editor.innerHTML);
             editor.style.display = 'none';
             markdownDisplay.style.display = 'block';
+            markdownDisplay.readOnly = false;
             toolbar.style.display = 'none';
             if (backBtn) backBtn.style.display = 'block';
         }
