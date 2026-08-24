@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . '/../../config.php';
+global $config;
 
 header('Content-Type: application/json');
 
