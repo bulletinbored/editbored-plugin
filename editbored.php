@@ -1,10 +1,9 @@
 <?php
 /**
  * Plugin Name: editbored
- * Version: 1.0.0
  * Author: mlzog
  * Description: WYSIWYG Markdown editor with mentions and image upload
- * License: MIT License
+ * License: BSD Zero Clause License
  */
 
 function editbored_init() {
@@ -26,7 +25,7 @@ function editbored_init() {
     $usersJson = json_encode($users);
     $uploadUrl = $pluginUrl . '/upload.php';
     $csrfToken = $_SESSION['csrf_token'] ?? '';
-    $nonce = $_SERVER['CSP_NONCE'] ?? '';
+    $nonce = $GLOBALS['CSP_NONCE'] ?? '';
     $ebVer = function($rel) use ($pluginUrl) {
         $f = __DIR__ . '/' . $rel;
         return $pluginUrl . '/' . $rel . '?v=' . (file_exists($f) ? filemtime($f) : time());
@@ -38,11 +37,11 @@ function editbored_init() {
     $head = '<link href="' . $cssUrl . '" rel="stylesheet">' . "\n";
     $head .= '<script nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '">window.editbored = window.editbored || {};window.editbored.users = ' . $usersJson . ';window.editbored.uploadUrl = ' . json_encode($uploadUrl) . ';window.editbored.csrfToken = ' . json_encode($csrfToken) . ';</script>' . "\n";
 
-    $footer = '<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>' . "\n";
-    $footer .= '<script async src="https://www.instagram.com/embed.js"></script>' . "\n";
-    $footer .= '<div id="fb-root"></div><script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v21.0"></script>' . "\n";
-    $footer .= '<script src="' . $mentionsUrl . '"></script>' . "\n";
-    $footer .= '<script src="' . $editorUrl . '"></script>' . "\n";
+    $footer = '<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
+    $footer .= '<script async src="https://www.instagram.com/embed.js" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
+    $footer .= '<div id="fb-root"></div><script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v21.0" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
+    $footer .= '<script src="' . $mentionsUrl . '" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
+    $footer .= '<script src="' . $editorUrl . '" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
     $footer .= '<script nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '">window.editbored = window.editbored || {};window.editbored.init && window.editbored.init();</script>' . "\n";
 
     $pluginManager->addHook('frontend_before_render', function() use ($head) {

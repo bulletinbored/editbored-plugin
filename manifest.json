@@ -1,10 +1,10 @@
 {
     "name": "editbored",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "author": "mlzog",
     "description": "WYSIWYG Markdown editor with mentions and image upload",
     "bootstrap": "editbored.php",
-    "license": "MIT License",
+    "license": "BSD Zero Clause License",
     "files": [
         "editbored.php",
         "upload.php",
