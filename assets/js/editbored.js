@@ -182,7 +182,7 @@
                 editor.innerHTML = ta.value;
             } else if (typeof marked !== 'undefined') {
                 // Content is markdown, parse with marked
-                editor.innerHTML = sanitizeRendered(marked.parse(ta.value));
+                editor.innerHTML = sanitizeRendered(parseMarkdownToHtml(ta.value));
             } else {
                 editor.textContent = ta.value;
             }
@@ -194,6 +194,13 @@
             ta.removeAttribute('required');
             form.addEventListener('submit', function(e) {
                 try {
+                    // If the user is currently in markdown view, convert their
+                    // markdown textarea into the rich-text editor first so no
+                    // edits are lost on submit.
+                    var mdDisplay = wrap.querySelector('.editbored-markdown-display');
+                    if (mdDisplay && mdDisplay.style.display !== 'none') {
+                        editor.innerHTML = sanitizeRendered(parseMarkdownToHtml(mdDisplay.value));
+                    }
                     // Remove the (editor-only) embed remove buttons so the "✕"
                     // never ends up in the submitted Markdown/output.
                     editor.querySelectorAll('.link-preview-wrap > button').forEach(function(b) { b.remove(); });
@@ -387,6 +394,20 @@
         }
     }
 
+    // Parse markdown to HTML, falling back to a line-break escaping when the
+    // marked library is not yet available (e.g. it loads after init()). This
+    // prevents typed markdown from being silently lost on toggle.
+    function parseMarkdownToHtml(src) {
+        if (typeof marked !== 'undefined') {
+            try {
+                return marked.parse(src);
+            } catch (e) {
+                console.error('editbored: marked.parse failed', e);
+            }
+        }
+        return escapeHtml(src).replace(/\n/g, '<br>');
+    }
+
     function toggleMarkdownView(editor, markdownDisplay) {
         var wrap = editor.closest('.editbored-wrap');
         var toolbar = wrap.querySelector('.editbored-toolbar');
@@ -398,8 +419,8 @@
             editor.style.display = 'block';
             toolbar.style.display = 'flex';
             if (backBtn) backBtn.style.display = 'none';
-            if (typeof marked !== 'undefined' && markdownDisplay.value) {
-                editor.innerHTML = sanitizeRendered(marked.parse(markdownDisplay.value));
+            if (markdownDisplay.value) {
+                editor.innerHTML = sanitizeRendered(parseMarkdownToHtml(markdownDisplay.value));
                 convertUrlsToEmbeds(editor);
             }
             editor.focus();
