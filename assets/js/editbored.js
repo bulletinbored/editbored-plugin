@@ -1,9 +1,19 @@
 (function() {
     'use strict';
 
-    const USERS = (window.editbored && window.editbored.users) ? window.editbored.users : [];
-    const UPLOAD_URL = (window.editbored && window.editbored.uploadUrl) ? window.editbored.uploadUrl : '';
-    const CSRF = (window.editbored && window.editbored.csrfToken) ? window.editbored.csrfToken : '';
+    // Boot data is provided via the #editbored-boot element (data-* attributes)
+    // instead of an inline script, so it works under strict CSP.
+    var bootEl = document.getElementById('editbored-boot');
+    var ebBoot = bootEl ? {
+        users: bootEl.getAttribute('data-users'),
+        uploadUrl: bootEl.getAttribute('data-upload-url'),
+        previewUrl: bootEl.getAttribute('data-preview-url'),
+        csrfToken: bootEl.getAttribute('data-csrf-token')
+    } : {};
+    var USERS = [];
+    try { USERS = ebBoot.users ? JSON.parse(ebBoot.users) : []; } catch (e) { USERS = []; }
+    var UPLOAD_URL = ebBoot.uploadUrl || '';
+    var CSRF = ebBoot.csrfToken || '';
 
     // Strip dangerous markup from rendered HTML (defence in depth alongside the
     // server-side sanitizer). marked does not sanitize output by default.
@@ -40,6 +50,13 @@
             Array.prototype.slice.call(el.attributes).forEach(function (attr) {
                 var name = attr.name.toLowerCase();
                 var val = (attr.value || '').replace(/\s+/g, '').toLowerCase();
+                // Drop inline styles (CSS-based overlay/phishing attacks) and ids
+                // (avoid DOM clashes / anchored overrides). Kept as defence in
+                // depth even though the server already strips style attributes.
+                if (name === 'style' || name === 'id') {
+                    el.removeAttribute(attr.name);
+                    return;
+                }
                 if (name.indexOf('on') === 0) {
                     el.removeAttribute(attr.name);
                 } else if ((name === 'href' || name === 'src') &&
@@ -177,13 +194,21 @@
             ta.removeAttribute('required');
             form.addEventListener('submit', function(e) {
                 try {
-                    // Save HTML directly instead of converting to markdown
-                    // This preserves all formatting (bold, italic, etc.)
-                    ta.value = editor.innerHTML;
-                } catch(e) {
+                    // Remove the (editor-only) embed remove buttons so the "✕"
+                    // never ends up in the submitted Markdown/output.
+                    editor.querySelectorAll('.link-preview-wrap > button').forEach(function(b) { b.remove(); });
+                    // Remove zero-width spacers used to place the caret after embeds.
+                    editor.querySelectorAll('.editbored-caret-spacer').forEach(function(s) { s.remove(); });
+                    // Replace each embed wrapper with its bare URL (on its own
+                    // line) so the server can build the proper embed/card.
+                    flattenEmbedsToUrls(editor);
+                    ta.value = htmlToMarkdown(editor.innerHTML);
+                    console.log('editbored submit OK, md:', ta.value.substring(0, 200));
+                } catch(err) {
+                    console.error('editbored submit failed:', err);
                     ta.value = editor.textContent || editor.innerText || '';
                 }
-                if (!editor.textContent || !editor.textContent.trim()) {
+                if (!ta.value || !ta.value.trim()) {
                     e.preventDefault();
                     editor.focus();
                     editor.style.border = '1px solid #ff3b30';
@@ -205,6 +230,11 @@
         editor.addEventListener('click', function() { updateToolbarState(toolbar); });
 
         editor.addEventListener('input', function() { handleMention(editor, ta); });
+        var ebEmbedTimer = null;
+        editor.addEventListener('input', function() {
+            if (ebEmbedTimer) clearTimeout(ebEmbedTimer);
+            ebEmbedTimer = setTimeout(function() { convertUrlsToEmbeds(editor); }, 600);
+        });
         editor.addEventListener('keydown', function(e) {
             if (e.key === 'Escape' && mentionDropdown) { closeMentionDropdown(); }
             if (e.key === 'Enter' && mentionDropdown && mentionDropdown.style.display !== 'none') {
@@ -364,18 +394,17 @@
         var isMarkdownMode = markdownDisplay.style.display !== 'none';
 
         if (isMarkdownMode) {
-            // Switch back to WYSIWYG
             markdownDisplay.style.display = 'none';
             editor.style.display = 'block';
             toolbar.style.display = 'flex';
             if (backBtn) backBtn.style.display = 'none';
-            // Parse markdown back to HTML
             if (typeof marked !== 'undefined' && markdownDisplay.value) {
                 editor.innerHTML = sanitizeRendered(marked.parse(markdownDisplay.value));
+                convertUrlsToEmbeds(editor);
             }
             editor.focus();
         } else {
-            // Switch to markdown view
+            flattenEmbedsToUrls(editor);
             markdownDisplay.value = htmlToMarkdown(editor.innerHTML);
             editor.style.display = 'none';
             markdownDisplay.style.display = 'block';
@@ -514,6 +543,9 @@
     }
 
     function createEmbedHTML(url, type) {
+        // Escape the URL for safe insertion into HTML attributes (defence
+        // against quote-breaking / attribute injection from a crafted URL).
+        var eu = escapeHtml(url);
         if (type === 'youtube') {
             var match = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]+)/);
             var id = match ? match[1] : '';
@@ -530,8 +562,8 @@
         }
         if (type === 'instagram') {
             return '<div class="link-preview link-preview--instagram" style="min-height:400px;background:#fff;border:1px solid #dbdbdb;border-radius:12px;overflow:hidden;">' +
-                '<blockquote class="instagram-media" data-instgrm-captioned data-instgrm-permalink="' + url + '" data-instgrm-version="15" style="background:#FFF;border:0;border-radius:3px;box-shadow:0 0 1px 0 rgba(0,0,0,0.5),0 1px 10px 0 rgba(0,0,0,0.15);margin:1px;max-width:540px;min-width:326px;padding:0;width:99.375%;width:-webkit-calc(100% - 2px);width:calc(100% - 2px);">' +
-                '<div style="padding:16px;"><a href="' + url + '" style="background:#FFFFFF;line-height:0;padding:0 0;text-align:center;text-decoration:none;width:100%;" target="_blank">' +
+                '<blockquote class="instagram-media" data-instgrm-captioned data-instgrm-permalink="' + eu + '" data-instgrm-version="15" style="background:#FFF;border:0;border-radius:3px;box-shadow:0 0 1px 0 rgba(0,0,0,0.5),0 1px 10px 0 rgba(0,0,0,0.15);margin:1px;max-width:540px;min-width:326px;padding:0;width:99.375%;width:-webkit-calc(100% - 2px);width:calc(100% - 2px);">' +
+                '<div style="padding:16px;"><a href="' + eu + '" style="background:#FFFFFF;line-height:0;padding:0 0;text-align:center;text-decoration:none;width:100%;" target="_blank">' +
                 '<div style="display:flex;flex-direction:row;align-items:center;"><div style="background-color:#F4F4F4;border-radius:50%;flex-grow:0;height:40px;margin-right:14px;width:40px;"></div>' +
                 '<div style="display:flex;flex-direction:column;flex-grow:1;justify-content:center;"><div style="background-color:#F4F4F4;border-radius:4px;flex-grow:0;height:14px;margin-bottom:6px;width:100px;"></div>' +
                 '<div style="background-color:#F4F4F4;border-radius:4px;flex-grow:0;height:14px;width:60px;"></div></div></div>' +
@@ -547,17 +579,17 @@
         }
         if (type === 'image') {
             return '<div class="link-preview link-preview--image" style="border-radius:12px;overflow:hidden;margin:0.6em 0;">' +
-                '<img src="' + url + '" alt="Image" style="max-width:100%;display:block;border-radius:12px;"></div>';
+                '<img src="' + eu + '" alt="Image" style="max-width:100%;display:block;border-radius:12px;"></div>';
         }
         if (type === 'generic') {
             var domain = '';
             try { domain = new URL(url).hostname; } catch(e) { domain = url.replace(/^https?:\/\//, '').split('/')[0]; }
-            var favicon = 'https://www.google.com/s2/favicons?domain=' + domain + '&sz=32';
+            var favicon = 'https://www.google.com/s2/favicons?domain=' + encodeURIComponent(domain) + '&sz=32';
             return '<div class="link-preview link-preview--generic" style="border:1px solid #e0e0e0;border-radius:12px;overflow:hidden;background:#fff;">' +
-                '<a href="' + url + '" target="_blank" style="display:flex;align-items:center;gap:12px;padding:12px 16px;text-decoration:none;color:inherit;">' +
+                '<a href="' + eu + '" target="_blank" style="display:flex;align-items:center;gap:12px;padding:12px 16px;text-decoration:none;color:inherit;">' +
                 '<img src="' + favicon + '" alt="" style="width:32px;height:32px;border-radius:6px;flex-shrink:0;background:#f5f5f5;" onerror="this.style.display=\'none\'">' +
-                '<div style="min-width:0;"><div style="font-weight:600;font-size:14px;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + domain + '</div>' +
-                '<div style="font-size:12px;color:#888;margin-top:2px;">' + domain + '</div></div></a></div>';
+                '<div style="min-width:0;"><div style="font-weight:600;font-size:14px;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(domain) + '</div>' +
+                '<div style="font-size:12px;color:#888;margin-top:2px;">' + escapeHtml(domain) + '</div></div></a></div>';
         }
         return null;
     }
@@ -606,7 +638,6 @@
         var textNodes = [];
         var node;
         while (node = walker.nextNode()) {
-            if (node.parentElement.closest('a') || node.parentElement.closest('.link-preview-wrap')) continue;
             textNodes.push(node);
         }
         var urlRegex = /(https?:\/\/[^\s<>"']+)/g;
@@ -624,15 +655,57 @@
                     range.setStart(textNode, idx);
                     range.setEnd(textNode, idx + url.length);
 
+                    // Image links are shown as an inline <img> (converted to
+                    // Markdown ![image](url) on submit), not as a preview card.
+                    if (type === 'image') {
+                        var img = document.createElement('img');
+                        img.src = url;
+                        img.alt = '';
+                        img.style.maxWidth = '100%';
+                        img.style.borderRadius = '12px';
+                        img.style.display = 'block';
+                        img.style.margin = '0.6em 0';
+                        range.deleteContents();
+                        range.insertNode(img);
+                        var spacer = document.createElement('span');
+                        spacer.className = 'editbored-caret-spacer';
+                        spacer.setAttribute('contenteditable', 'true');
+                        spacer.textContent = '\u200B';
+                        img.parentNode.insertBefore(spacer, img.nextSibling);
+                        var r2 = document.createRange();
+                        r2.setStart(spacer, 0); r2.collapse(true);
+                        var s2 = window.getSelection(); s2.removeAllRanges(); s2.addRange(r2);
+                        return;
+                    }
+
+                    var embedHtml = createEmbedHTML(url, type);
+                    if (!embedHtml) return;
+
                     var wrapper = buildEmbedWrapper(url, type, true, editor);
                     if (!wrapper) return;
 
-                    range.deleteContents();
-                    range.insertNode(wrapper);
+                    var parentLink = textNode.parentElement.closest && textNode.parentElement.closest('a');
+                    if (parentLink) {
+                        parentLink.parentNode.replaceChild(wrapper, parentLink);
+                    } else {
+                        range.deleteContents();
+                        range.insertNode(wrapper);
+                    }
+
+                    // Insert an editable, empty span right after the (non-editable)
+                    // embed so the caret can move past it and the user can keep
+                    // typing / add a new line. Removed again on submit.
+                    var spacer = document.createElement('span');
+                    spacer.className = 'editbored-caret-spacer';
+                    spacer.setAttribute('contenteditable', 'true');
+                    spacer.textContent = '\u200B';
+                    if (wrapper.parentNode) {
+                        wrapper.parentNode.insertBefore(spacer, wrapper.nextSibling);
+                    }
 
                     var sel = window.getSelection();
                     var newRange = document.createRange();
-                    newRange.setStartAfter(wrapper);
+                    newRange.setStart(spacer, 0);
                     newRange.collapse(true);
                     sel.removeAllRanges();
                     sel.addRange(newRange);
@@ -674,25 +747,71 @@
         if (bs && document.queryCommandState('strikeThrough')) bs.classList.add('active');
     }
 
+    /**
+     * Replace every .link-preview-wrap embed in a DOM subtree with a plain text
+     * node holding its bare URL (on its own line). This is done in the DOM so we
+     * don't have to parse nested <div>s with fragile regexes, and it guarantees
+     * each embed becomes exactly one URL for the Markdown conversion.
+     */
+    function flattenEmbedsToUrls(root) {
+        root.querySelectorAll('.link-preview-wrap').forEach(function(w) {
+            var url = w.getAttribute('data-url') || '';
+            var txt = document.createTextNode(url ? '\n' + url + '\n\n' : '');
+            if (w.parentNode) {
+                w.parentNode.insertBefore(txt, w);
+                w.parentNode.removeChild(w);
+            }
+        });
+    }
+
     function htmlToMarkdown(html) {
         var text = html;
-        text = text.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, '# $1\n\n');
-        text = text.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, '## $1\n\n');
-        text = text.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, '### $1\n\n');
-        text = text.replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, '#### $1\n\n');
+
+        // Blockquote (process before inline tags).
         text = text.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, function(m, c) {
-            return '> ' + c.replace(/<br\s*\/?>/gi, '\n> ').replace(/<\/?p[^>]*>/gi, '\n> ') + '\n\n';
+            c = c.replace(/<br\s*\/?>/gi, '\n').replace(/<\/?p[^>]*>/gi, '\n');
+            c = c.replace(/^\s+|\s+$/g, '');
+            return '\n> ' + c.replace(/\n/g, '\n> ') + '\n\n';
         });
+
+        // Fenced code block (pre > code, or bare pre).
         text = text.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, function(m, c) {
             c = c.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, '$1');
             c = c.replace(/<br\s*\/?>/gi, '\n');
             c = stripTags(c);
-            return '```\n' + c + '\n```\n\n';
+            return '\n```\n' + c.replace(/^\n+|\n+$/g, '') + '\n```\n\n';
         });
+
+        // Ordered & unordered lists. Each <li> becomes a line; the wrapping
+        // <ol>/<ul> (and any start=) is stripped afterwards.
+        text = text.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, function(m, c) {
+            var idx = 1;
+            return '\n' + c.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, function(lm, lc) {
+                return (idx++) + '. ' + stripTags(lc).replace(/\s+/g, ' ').trim() + '\n';
+            }) + '\n';
+        });
+        text = text.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, function(m, c) {
+            return '\n' + c.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, function(lm, lc) {
+                return '- ' + stripTags(lc).replace(/\s+/g, ' ').trim() + '\n';
+            }) + '\n';
+        });
+        // Standalone <li> (no wrapper) – treat as bullets.
+        text = text.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, '- ' + stripTags('$1').replace(/\s+/g, ' ').trim() + '\n');
+
+        // Headings.
+        text = text.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, '\n# $1\n\n');
+        text = text.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, '\n## $1\n\n');
+        text = text.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, '\n### $1\n\n');
+        text = text.replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, '\n#### $1\n\n');
+
+        // Inline code.
         text = text.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, '`$1`');
-        text = text.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, '- $1\n');
+
+        // Links & images.
         text = text.replace(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)');
         text = text.replace(/<img[^>]*src="([^"]*)"[^>]*>/gi, '![image]($1)');
+
+        // Emphasis.
         text = text.replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, '**$1**');
         text = text.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**');
         text = text.replace(/<em[^>]*>([\s\S]*?)<\/em>/gi, '*$1*');
@@ -700,12 +819,14 @@
         text = text.replace(/<del[^>]*>([\s\S]*?)<\/del>/gi, '~~$1~~');
         text = text.replace(/<s[^>]*>([\s\S]*?)<\/s>/gi, '~~$1~~');
         text = text.replace(/<strike[^>]*>([\s\S]*?)<\/strike>/gi, '~~$1~~');
+
         text = text.replace(/<hr[^>]*>/gi, '\n---\n\n');
-        text = text.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, '$1\n\n');
+        text = text.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, '\n$1\n\n');
         text = text.replace(/<br\s*\/?>/gi, '\n');
         text = text.replace(/<span[^>]*class="mention"[^>]*>([\s\S]*?)<\/span>/gi, '$1');
-        text = text.replace(/<div[^>]*class="link-preview-wrap"[^>]*data-url="([^"]*)"[^>]*>[\s\S]*?<\/div>/gi, '$1\n\n');
+
         text = stripTags(text);
+        text = text.replace(/[ \t]+\n/g, '\n');
         text = text.replace(/\n{4,}/g, '\n\n\n');
         return text.trim();
     }
@@ -750,7 +871,7 @@
                     var embedHtml = createEmbedHTML(url, type);
                     if (!embedHtml) return;
 
-                    var wrapper = buildEmbedWrapper(url, type, false);
+                    var wrapper = buildEmbedWrapper(url, type, true, editor);
                     if (!wrapper) return;
 
                     range.deleteContents();

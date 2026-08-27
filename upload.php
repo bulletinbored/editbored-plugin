@@ -1,6 +1,8 @@
 <?php
-session_start();
-global $config;
+// Load the same bootstrap the app uses so the session (BBSESSID, save_path,
+// cookie params) is resumed identically to the page that rendered the editor.
+require_once __DIR__ . '/../../src/bootstrap.php';
+require_once __DIR__ . '/../../src/helpers.php';
 
 header('Content-Type: application/json');
 
@@ -16,7 +18,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-if (!empty($config['csrf_token']) && !hash_equals($config['csrf_token'], $_POST['csrf_token'] ?? '')) {
+$csrf = $_POST['csrf_token'] ?? '';
+if (!validate_csrf_token($csrf)) {
     http_response_code(403);
     echo json_encode(['error' => 'CSRF token invalid']);
     exit;
@@ -28,31 +31,33 @@ if (empty($_FILES['editbored_image']['tmp_name']) || $_FILES['editbored_image'][
     exit;
 }
 
-$finfo = new finfo(FILEINFO_MIME_TYPE);
-$mime = $finfo->file($_FILES['editbored_image']['tmp_name']);
-$allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-if (!in_array($mime, $allowed)) {
+$allowed = [
+    'image/jpeg' => 'jpg',
+    'image/png'  => 'png',
+    'image/gif'  => 'gif',
+    'image/webp' => 'webp',
+];
+$maxSize = 5 * 1024 * 1024;
+$info = validate_upload(
+    $_FILES['editbored_image']['tmp_name'],
+    $_FILES['editbored_image']['name'] ?? '',
+    $allowed,
+    $maxSize
+);
+if ($info === null) {
     http_response_code(400);
-    echo json_encode(['error' => 'Invalid file type']);
+    echo json_encode(['error' => 'Invalid image']);
     exit;
 }
 
-$ext = match($mime) {
-    'image/jpeg' => 'jpg',
-    'image/png' => 'png',
-    'image/gif' => 'gif',
-    'image/webp' => 'webp',
-    default => 'bin',
-};
-
-$safeName = 'editbored_' . $_SESSION['user_id'] . '_' . uniqid() . '.' . $ext;
 $uploadDir = __DIR__ . '/../../uploads/';
 if (!is_dir($uploadDir)) {
-    mkdir($uploadDir, 0755, true);
+    @mkdir($uploadDir, 0755, true);
 }
+$safeName = $info['safe_name'];
 
 if (move_uploaded_file($_FILES['editbored_image']['tmp_name'], $uploadDir . $safeName)) {
-    $base = rtrim(!empty($config['base_url']) ? $config['base_url'] : preg_replace('#/plugins/[^/]+/[^/]+$#', '', $_SERVER['SCRIPT_NAME'] ?? ''), '/');
+    $base = rtrim(!empty($GLOBALS['config']['base_url']) ? $GLOBALS['config']['base_url'] : preg_replace('#/plugins/[^/]+/[^/]+$#', '', $_SERVER['SCRIPT_NAME'] ?? ''), '/');
     $url = $base . '/uploads/' . rawurlencode($safeName);
     echo json_encode(['url' => $url, 'filename' => $safeName]);
     exit;

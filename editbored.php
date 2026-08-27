@@ -2,19 +2,21 @@
 /**
  * Plugin Name: editbored
  * Author: mlzog
- * Description: WYSIWYG Markdown editor with mentions and image upload
+ * Description: WYSIWYG Markdown editor with mentions and image upload.
+ *              Saves Markdown to DB; renders server-side via bb_render_content().
  * License: BSD Zero Clause License
  */
 
 function editbored_init() {
-    global $pluginManager, $config;
+    global $pluginManager;
 
     if (!isset($pluginManager)) {
         return;
     }
 
     $baseUrl = rtrim(base_url(), '/');
-    $pluginUrl = $baseUrl . '/plugins/editbored';
+    $pluginUrl = $baseUrl . '/plugins/' . basename(__DIR__);
+    $previewUrl = $baseUrl . '/index.php?action=preview';
 
     $users = [];
     if (isset($GLOBALS['pdo'])) {
@@ -24,38 +26,43 @@ function editbored_init() {
 
     $usersJson = json_encode($users);
     $uploadUrl = $pluginUrl . '/upload.php';
+    // Ensure a CSRF token exists in the session so the upload endpoint can
+    // validate it (generate_csrf_token() was never called globally before).
+    if (function_exists('generate_csrf_token')) {
+        generate_csrf_token();
+    }
     $csrfToken = $_SESSION['csrf_token'] ?? '';
     $nonce = $GLOBALS['CSP_NONCE'] ?? '';
-    $ebVer = function($rel) use ($pluginUrl) {
+    $ebVer = function ($rel) use ($pluginUrl) {
         $f = __DIR__ . '/' . $rel;
         return $pluginUrl . '/' . $rel . '?v=' . (file_exists($f) ? filemtime($f) : time());
     };
     $cssUrl = $ebVer('assets/css/editbored.css');
-    $mentionsUrl = $ebVer('assets/js/mentions.js');
     $editorUrl = $ebVer('assets/js/editbored.js');
+    $markedUrl = $ebVer('assets/js/marked.min.js');
 
     $head = '<link href="' . $cssUrl . '" rel="stylesheet">' . "\n";
-    $head .= '<script nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '">window.editbored = window.editbored || {};window.editbored.users = ' . $usersJson . ';window.editbored.uploadUrl = ' . json_encode($uploadUrl) . ';window.editbored.csrfToken = ' . json_encode($csrfToken) . ';</script>' . "\n";
 
-    $footer = '<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
+    // Boot data passed via data-* attributes (no inline script) so it survives
+    // strict CSP. editbored.js reads these in init().
+    $head .= '<div id="editbored-boot" data-users="' . htmlspecialchars($usersJson, ENT_QUOTES, 'UTF-8') . '" '
+        . 'data-upload-url="' . htmlspecialchars($uploadUrl, ENT_QUOTES, 'UTF-8') . '" '
+        . 'data-preview-url="' . htmlspecialchars($previewUrl, ENT_QUOTES, 'UTF-8') . '" '
+        . 'data-csrf-token="' . htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') . '" style="display:none"></div>' . "\n";
+
+    $footer = '<script src="' . $markedUrl . '" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
     $footer .= '<script async src="https://www.instagram.com/embed.js" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
     $footer .= '<div id="fb-root"></div><script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v21.0" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
-    $footer .= '<script src="' . $mentionsUrl . '" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
     $footer .= '<script src="' . $editorUrl . '" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
-    $footer .= '<script nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '">window.editbored = window.editbored || {};window.editbored.init && window.editbored.init();</script>' . "\n";
 
-    $pluginManager->addHook('frontend_before_render', function() use ($head) {
+    $pluginManager->addHook('frontend_before_render', function () use ($head) {
         echo $head;
     });
-    $pluginManager->addHook('footer_before_render', function() use ($footer) {
+    $pluginManager->addHook('footer_before_render', function () use ($footer) {
         echo $footer;
     });
 
-    // Mention notifications (case 7): editbored owns these. The core fires
-    // after_post on every reply; we send the email (notify_mentioned_users)
-    // and write the in-app notification row for each mentioned user.
-    // Hook signature: after_post($threadId, $postId)
-    $pluginManager->addHook('after_post', function($threadId, $postId) {
+    $pluginManager->addHook('after_post', function ($threadId, $postId) {
         $pdo = $GLOBALS['pdo'] ?? null;
         if (!$pdo) {
             return;
@@ -77,10 +84,6 @@ function editbored_init() {
         $threadTitle = $post['title'] ?? '';
         $threadLink = url('thread', ['id' => (int)$threadId, 'slug' => slugify($threadTitle)], true);
 
-        // Detect @mentions (editbored owns mention notifications: both the
-        // in-app row and the email). The regex mirrors the syntax produced by
-        // the editbored mention autocomplete and also catches mentions that
-        // appear inside a quoted block.
         if (preg_match_all('/(?<!\w)@([A-Za-z0-9_]+)/u', $post['content'] ?? '', $matches)) {
             $usernames = array_unique($matches[1]);
             foreach ($usernames as $username) {
@@ -96,7 +99,6 @@ function editbored_init() {
                 ]);
                 create_notification($pdo, (int)$user['id'], 'mention', $notifMsg, $notifMsg, $threadLink);
 
-                // Email delivery for the mention (owned by editbored).
                 $subject = t('mentioned_subject', ['title' => $threadTitle]);
                 $body = t('mentioned_body', [
                     'username' => escape($user['username'] ?? $username),
