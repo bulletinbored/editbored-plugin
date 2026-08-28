@@ -205,11 +205,13 @@
                     editor.querySelectorAll('.link-preview-wrap > button').forEach(function(b) { b.remove(); });
                     // Remove zero-width spacers used to place the caret after embeds.
                     editor.querySelectorAll('.editbored-caret-spacer').forEach(function(s) { s.remove(); });
+                    // Remove editor-only marker from manual links so the saved
+                    // Markdown carries a plain [text](url) with no preview on re-render.
+                    editor.querySelectorAll('[data-editbored-link]').forEach(function(a) { a.removeAttribute('data-editbored-link'); });
                     // Replace each embed wrapper with its bare URL (on its own
                     // line) so the server can build the proper embed/card.
                     flattenEmbedsToUrls(editor);
                     ta.value = htmlToMarkdown(editor.innerHTML);
-                    console.log('editbored submit OK, md:', ta.value.substring(0, 200));
                 } catch(err) {
                     console.error('editbored submit failed:', err);
                     ta.value = editor.textContent || editor.innerText || '';
@@ -436,7 +438,6 @@
 
     function insertLink(editor) {
         var url = prompt('Enter URL:');
-        console.log('editbored insertLink called, url=', url);
         if (url) {
             var selection = window.getSelection();
             var text = selection.toString() || url;
@@ -444,8 +445,7 @@
             a.href = url;
             a.target = '_blank';
             a.textContent = text;
-            // Insert the link, then place the caret right after it so typing
-            // continues below/after the link instead of above it.
+            a.setAttribute('data-editbored-link', '1');
             var sel = window.getSelection();
             var range = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
             if (range && editor.contains(range.commonAncestorContainer)) {
@@ -691,7 +691,8 @@
         }
         var urlRegex = /(https?:\/\/[^\s<>"']+)/g;
         textNodes.forEach(function(textNode) {
-            if (textNode.parentElement.closest && (textNode.parentElement.closest('a') || textNode.parentElement.closest('.link-preview-wrap'))) {
+            var parent = textNode.parentElement;
+            if (parent && parent.closest && (parent.closest('a') || parent.closest('[data-editbored-link]') || parent.closest('.link-preview-wrap'))) {
                 return;
             }
             var matches = [];

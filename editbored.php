@@ -68,6 +68,13 @@ function editbored_init() {
         echo $footer;
     });
 
+    // Take over content rendering to add auto-embeds and link cards on top of
+    // the core Markdown output. The core renders Markdown only; embed/card
+    // generation is a plugin concern.
+    $pluginManager->addHook('render_content', function (string $text): ?string {
+        return editbored_render_content($text);
+    });
+
     $pluginManager->addHook('after_post', function ($threadId, $postId) {
         $pdo = $GLOBALS['pdo'] ?? null;
         if (!$pdo) {
@@ -116,4 +123,119 @@ function editbored_init() {
             }
         }
     });
+}
+
+// Hosts permitted for auto-embed iframes (server-validated, so a user cannot
+// smuggle an arbitrary iframe).
+function editbored_embed_allowed_hosts(): array {
+    return [
+        'www.youtube.com', 'youtube.com', 'www.youtube-nocookie.com', 'youtube-nocookie.com',
+        'platform.twitter.com', 'twitter.com', 'x.com',
+        'www.facebook.com', 'facebook.com',
+        'www.instagram.com', 'instagram.com',
+    ];
+}
+
+// Turn a bare media URL into a safe embed iframe, or null if not allowed.
+function editbored_build_embed(string $url): ?string {
+    $url = trim($url);
+    $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+    if ($host === '') {
+        return null;
+    }
+    $bare = preg_replace('/^www\./', '', $host);
+    $esc = function (string $s): string {
+        return htmlspecialchars($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    };
+
+    if (in_array($bare, ['youtube.com', 'youtube-nocookie.com'], true)) {
+        parse_str((string) parse_url($url, PHP_URL_QUERY), $q);
+        $id = $q['v'] ?? '';
+        if ($id === '' && preg_match('#/(?:embed|shorts)/([A-Za-z0-9_-]{6,})#', $url, $m)) {
+            $id = $m[1];
+        }
+        if (!preg_match('/^[A-Za-z0-9_-]{6,}$/', $id)) {
+            return null;
+        }
+        $domain = $bare === 'youtube-nocookie.com' ? 'www.youtube-nocookie.com' : 'www.youtube.com';
+        $src = 'https://' . $domain . '/embed/' . $id;
+        return '<div class="embed embed-youtube">'
+            . '<iframe src="' . $esc($src) . '" title="Embedded video" '
+            . 'frameborder="0" allowfullscreen loading="lazy"></iframe></div>';
+    }
+
+    if (in_array($bare, ['twitter.com', 'x.com'], true)) {
+        return '<div class="embed embed-twitter">'
+            . '<iframe src="https://platform.twitter.com/embed/Tweet.html?url='
+            . urlencode($url) . '" title="Embedded post" '
+            . 'frameborder="0" loading="lazy"></iframe></div>';
+    }
+
+    if (in_array($bare, ['facebook.com', 'instagram.com'], true)) {
+        $src = 'https://www.' . $bare . '/plugins/embed?url=' . urlencode($url);
+        return '<div class="embed embed-' . ($bare === 'instagram.com' ? 'instagram' : 'facebook') . '">'
+            . '<iframe src="' . $esc($src) . '" title="Embedded post" '
+            . 'frameborder="0" loading="lazy"></iframe></div>';
+    }
+
+    return null;
+}
+
+// Safe generic link card for any http(s) URL.
+function editbored_build_link_card(string $url): string {
+    $url = trim($url);
+    $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+    if ($host === '' || !preg_match('#^https?://#i', $url)) {
+        return '';
+    }
+    $esc = function (string $s): string {
+        return htmlspecialchars($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    };
+    $favicon = 'https://www.google.com/s2/favicons?domain=' . rawurlencode($host) . '&sz=64';
+    return '<div class="embed embed-link">'
+        . '<a href="' . $esc($url) . '" target="_blank" rel="noopener noreferrer">'
+        . '<img src="' . $esc($favicon) . '" alt="" loading="lazy" class="embed-link-favicon">'
+        . '<span class="embed-link-domain">' . $esc($host) . '</span>'
+        . '<span class="embed-link-url">' . $esc($url) . '</span>'
+        . '</a></div>';
+}
+
+// Full content render for editbored: core Markdown plus auto-embeds and cards.
+function editbored_render_content(string $text): string {
+    if ($text === '' || $text === null) {
+        return '';
+    }
+    // Parse Markdown directly (NOT via bb_render_content, which would re-enter
+    // this hook and cause infinite recursion). Then upgrade bare URLs into
+    // embeds/cards — but only in text segments, never inside HTML tags or
+    // attributes (which would corrupt href/src values).
+    $html = '<div class="markdown-content">' . bb_parse_markdown($text) . '</div>';
+    return preg_replace_callback(
+        '#([^<]*)(<[^>]*>)?#',
+        function ($m) {
+            if (!isset($m[1]) || $m[1] === '') {
+                return $m[0];
+            }
+            return preg_replace_callback(
+                '#https?://[^\s<>"\'\)]+#i',
+                function ($urlMatch) {
+                    $url = rtrim($urlMatch[0], '.');
+                    // Bare image URL -> render as <img> (skip SVG, which can carry script).
+                    if (preg_match('#\.(png|jpe?g|gif|webp|avif|bmp|tiff?)(\?.*)?$#i', $url) && !preg_match('#\.svg(\?.*)?$#i', $url)) {
+                        $esc = function (string $s): string {
+                            return htmlspecialchars($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                        };
+                        return '<div class="embed embed-image"><img src="' . $esc($url) . '" alt="" loading="lazy"></div>';
+                    }
+                    $embed = editbored_build_embed($url);
+                    if ($embed === null) {
+                        $embed = editbored_build_link_card($url);
+                    }
+                    return ($embed !== '' && $embed !== null) ? $embed : htmlspecialchars($url, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                },
+                $m[1]
+            ) . ($m[2] ?? '');
+        },
+        $html
+    );
 }
