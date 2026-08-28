@@ -176,13 +176,11 @@
         ta.style.display = 'none';
 
         if (ta.value) {
-            // Check if content looks like HTML (from new save method) or markdown (from old method)
-            if (/<[a-z][\s\S]*>/i.test(ta.value)) {
-                // Content is HTML, load directly
-                editor.innerHTML = ta.value;
-            } else if (typeof marked !== 'undefined') {
-                // Content is markdown, parse with marked
+            // Content is always Markdown (user HTML is never stored). Parse it
+            // for the rich-text preview; if marked is not ready yet, show text.
+            if (typeof marked !== 'undefined') {
                 editor.innerHTML = sanitizeRendered(parseMarkdownToHtml(ta.value));
+                convertUrlsToEmbeds(editor);
             } else {
                 editor.textContent = ta.value;
             }
@@ -200,6 +198,7 @@
                     var mdDisplay = wrap.querySelector('.editbored-markdown-display');
                     if (mdDisplay && mdDisplay.style.display !== 'none') {
                         editor.innerHTML = sanitizeRendered(parseMarkdownToHtml(mdDisplay.value));
+                        convertUrlsToEmbeds(editor);
                     }
                     // Remove the (editor-only) embed remove buttons so the "✕"
                     // never ends up in the submitted Markdown/output.
@@ -437,10 +436,32 @@
 
     function insertLink(editor) {
         var url = prompt('Enter URL:');
+        console.log('editbored insertLink called, url=', url);
         if (url) {
             var selection = window.getSelection();
             var text = selection.toString() || url;
-            document.execCommand('insertHTML', false, '<a href="' + escapeHtml(url) + '" target="_blank">' + escapeHtml(text) + '</a>');
+            var a = document.createElement('a');
+            a.href = url;
+            a.target = '_blank';
+            a.textContent = text;
+            // Insert the link, then place the caret right after it so typing
+            // continues below/after the link instead of above it.
+            var sel = window.getSelection();
+            var range = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+            if (range && editor.contains(range.commonAncestorContainer)) {
+                range.deleteContents();
+                range.insertNode(a);
+            } else {
+                editor.appendChild(a);
+            }
+            var tail = document.createTextNode('\u00A0');
+            a.parentNode.insertBefore(tail, a.nextSibling);
+            var newRange = document.createRange();
+            newRange.setStart(tail, 1);
+            newRange.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(newRange);
+            editor.focus();
         }
     }
 
@@ -582,7 +603,9 @@
                 '<iframe src="https://platform.twitter.com/embed/Tweet.html?id=' + tid + '" style="border:none;width:100%;height:450px;display:block;background:#fff;"></iframe></div>';
         }
         if (type === 'instagram') {
-            return '<div class="link-preview link-preview--instagram" style="min-height:400px;background:#fff;border:1px solid #dbdbdb;border-radius:12px;overflow:hidden;">' +
+            // No overflow:hidden / fixed min-height here: the Instagram embed
+            // sizes itself and a clipped box would force inner scrolling.
+            return '<div class="link-preview link-preview--instagram" style="background:#fff;border:1px solid #dbdbdb;border-radius:12px;">' +
                 '<blockquote class="instagram-media" data-instgrm-captioned data-instgrm-permalink="' + eu + '" data-instgrm-version="15" style="background:#FFF;border:0;border-radius:3px;box-shadow:0 0 1px 0 rgba(0,0,0,0.5),0 1px 10px 0 rgba(0,0,0,0.15);margin:1px;max-width:540px;min-width:326px;padding:0;width:99.375%;width:-webkit-calc(100% - 2px);width:calc(100% - 2px);">' +
                 '<div style="padding:16px;"><a href="' + eu + '" style="background:#FFFFFF;line-height:0;padding:0 0;text-align:center;text-decoration:none;width:100%;" target="_blank">' +
                 '<div style="display:flex;flex-direction:row;align-items:center;"><div style="background-color:#F4F4F4;border-radius:50%;flex-grow:0;height:40px;margin-right:14px;width:40px;"></div>' +
@@ -654,6 +677,11 @@
         return wrapper;
     }
 
+    // Convert every bare URL in the editor into an embed preview. We collect
+    // all URLs in a text node FIRST, then rebuild that node in a single pass
+    // (back-to-front). Mutating the node while scanning would split it via
+    // insertNode() and hide the remaining URLs — which is why only the first
+    // embed ever appeared.
     function convertUrlsToEmbeds(editor) {
         var walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null, false);
         var textNodes = [];
@@ -663,76 +691,84 @@
         }
         var urlRegex = /(https?:\/\/[^\s<>"']+)/g;
         textNodes.forEach(function(textNode) {
-            var text = textNode.textContent;
+            if (textNode.parentElement.closest && (textNode.parentElement.closest('a') || textNode.parentElement.closest('.link-preview-wrap'))) {
+                return;
+            }
+            var matches = [];
+            var m;
             urlRegex.lastIndex = 0;
-            var match = urlRegex.exec(text);
-            if (match) {
-                var url = match[0];
-                var type = detectPreviewType(url);
-                if (type) {
-                    var range = document.createRange();
-                    var idx = text.indexOf(url);
-                    if (idx === -1) return;
-                    range.setStart(textNode, idx);
-                    range.setEnd(textNode, idx + url.length);
-
-                    // Image links are shown as an inline <img> (converted to
-                    // Markdown ![image](url) on submit), not as a preview card.
-                    if (type === 'image') {
-                        var img = document.createElement('img');
-                        img.src = url;
-                        img.alt = '';
-                        img.style.maxWidth = '100%';
-                        img.style.borderRadius = '12px';
-                        img.style.display = 'block';
-                        img.style.margin = '0.6em 0';
-                        range.deleteContents();
-                        range.insertNode(img);
-                        var spacer = document.createElement('span');
-                        spacer.className = 'editbored-caret-spacer';
-                        spacer.setAttribute('contenteditable', 'true');
-                        spacer.textContent = '\u200B';
-                        img.parentNode.insertBefore(spacer, img.nextSibling);
-                        var r2 = document.createRange();
-                        r2.setStart(spacer, 0); r2.collapse(true);
-                        var s2 = window.getSelection(); s2.removeAllRanges(); s2.addRange(r2);
-                        return;
-                    }
-
-                    var embedHtml = createEmbedHTML(url, type);
-                    if (!embedHtml) return;
-
-                    var wrapper = buildEmbedWrapper(url, type, true, editor);
-                    if (!wrapper) return;
-
-                    var parentLink = textNode.parentElement.closest && textNode.parentElement.closest('a');
-                    if (parentLink) {
-                        parentLink.parentNode.replaceChild(wrapper, parentLink);
-                    } else {
-                        range.deleteContents();
-                        range.insertNode(wrapper);
-                    }
-
-                    // Insert an editable, empty span right after the (non-editable)
-                    // embed so the caret can move past it and the user can keep
-                    // typing / add a new line. Removed again on submit.
-                    var spacer = document.createElement('span');
-                    spacer.className = 'editbored-caret-spacer';
-                    spacer.setAttribute('contenteditable', 'true');
-                    spacer.textContent = '\u200B';
-                    if (wrapper.parentNode) {
-                        wrapper.parentNode.insertBefore(spacer, wrapper.nextSibling);
-                    }
-
-                    var sel = window.getSelection();
-                    var newRange = document.createRange();
-                    newRange.setStart(spacer, 0);
-                    newRange.collapse(true);
-                    sel.removeAllRanges();
-                    sel.addRange(newRange);
-
-                    processSocialEmbeds(wrapper, type);
+            while ((m = urlRegex.exec(textNode.textContent)) !== null) {
+                var url = m[0];
+                if (detectPreviewType(url)) {
+                    matches.push({ url: url, index: m.index, len: url.length });
                 }
+            }
+            if (!matches.length) return;
+
+            var frag = document.createDocumentFragment();
+            var cursor = textNode.textContent.length;
+            var lastEmbed = null;
+            for (var k = matches.length - 1; k >= 0; k--) {
+                var mm = matches[k];
+                if (cursor > mm.index + mm.len) {
+                    frag.insertBefore(
+                        document.createTextNode(textNode.textContent.slice(mm.index + mm.len, cursor)),
+                        frag.firstChild
+                    );
+                }
+                var url = mm.url;
+                var type = detectPreviewType(url);
+                if (type === 'image') {
+                    var img = document.createElement('img');
+                    img.src = url;
+                    img.alt = '';
+                    img.style.maxWidth = '100%';
+                    img.style.borderRadius = '12px';
+                    img.style.display = 'block';
+                    img.style.margin = '0.6em 0';
+                    frag.insertBefore(img, frag.firstChild);
+                    lastEmbed = img;
+                } else {
+                    var embedHtml = createEmbedHTML(url, type);
+                    if (embedHtml) {
+                        var wrapper = buildEmbedWrapper(url, type, true, editor);
+                        if (wrapper) {
+                            frag.insertBefore(document.createElement('br'), frag.firstChild);
+                            frag.insertBefore(wrapper, frag.firstChild);
+                            lastEmbed = wrapper;
+                            processSocialEmbeds(wrapper, type);
+                        } else {
+                            frag.insertBefore(document.createTextNode(url), frag.firstChild);
+                        }
+                    } else {
+                        frag.insertBefore(document.createTextNode(url), frag.firstChild);
+                    }
+                }
+                frag.insertBefore(document.createElement('br'), frag.firstChild);
+                cursor = mm.index;
+            }
+            if (cursor > 0) {
+                frag.insertBefore(
+                    document.createTextNode(textNode.textContent.slice(0, cursor)),
+                    frag.firstChild
+                );
+            }
+            textNode.parentNode.replaceChild(frag, textNode);
+            // Place the caret right after the last embed so typing continues
+            // below the preview instead of above it.
+            if (lastEmbed && lastEmbed.parentNode) {
+                var after = document.createTextNode('\u00A0');
+                if (lastEmbed.nextSibling) {
+                    lastEmbed.parentNode.insertBefore(after, lastEmbed.nextSibling);
+                } else {
+                    lastEmbed.parentNode.appendChild(after);
+                }
+                var range = document.createRange();
+                range.setStart(after, 1);
+                range.collapse(true);
+                var sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
             }
         });
     }
@@ -864,6 +900,10 @@
         return div.innerHTML;
     }
 
+    // Expand embeds inside already-rendered post content (the server has
+    // already produced the sanitized HTML; we only add the live social
+    // iframes/cards for URLs that remain as plain text). Every URL in a text
+    // node is processed, not just the first.
     function processContentEmbeds() {
         var containers = document.querySelectorAll('.thread-content, .post-content, .markdown-content');
         containers.forEach(function(container) {
@@ -876,72 +916,68 @@
             }
             var urlRegex = /(https?:\/\/[^\s<>"']+)/g;
             textNodes.forEach(function(textNode) {
-                var text = textNode.textContent;
+                var matches = [];
+                var m;
                 urlRegex.lastIndex = 0;
-                var match = urlRegex.exec(text);
-                if (match) {
-                    var url = match[0];
-                    var type = detectPreviewType(url);
-                    if (type) {
-                        var range = document.createRange();
-                        var idx = text.indexOf(url);
-                        if (idx === -1) return;
-                        range.setStart(textNode, idx);
-                        range.setEnd(textNode, idx + url.length);
-
-                    var embedHtml = createEmbedHTML(url, type);
-                    if (!embedHtml) return;
-
-                    var wrapper = buildEmbedWrapper(url, type, true, editor);
-                    if (!wrapper) return;
-
-                    range.deleteContents();
-                    range.insertNode(wrapper);
-
-                    processSocialEmbeds(wrapper, type);
+                while ((m = urlRegex.exec(textNode.textContent)) !== null) {
+                    var url = m[0];
+                    if (detectPreviewType(url)) {
+                        matches.push({ url: url, index: m.index, len: url.length });
                     }
                 }
+                if (!matches.length) return;
+                var frag = document.createDocumentFragment();
+                var cursor = textNode.textContent.length;
+                for (var k = matches.length - 1; k >= 0; k--) {
+                    var mm = matches[k];
+                    if (cursor > mm.index + mm.len) {
+                        frag.insertBefore(
+                            document.createTextNode(textNode.textContent.slice(mm.index + mm.len, cursor)),
+                            frag.firstChild
+                        );
+                    }
+                    var url = mm.url;
+                    var type = detectPreviewType(url);
+                    var embedHtml = createEmbedHTML(url, type);
+                    if (embedHtml) {
+                        var wrapper = buildEmbedWrapper(url, type, true, editor);
+                        if (wrapper) {
+                            frag.insertBefore(document.createElement('br'), frag.firstChild);
+                            frag.insertBefore(wrapper, frag.firstChild);
+                            processSocialEmbeds(wrapper, type);
+                        } else {
+                            frag.insertBefore(document.createTextNode(url), frag.firstChild);
+                        }
+                    } else {
+                        frag.insertBefore(document.createTextNode(url), frag.firstChild);
+                    }
+                    frag.insertBefore(document.createElement('br'), frag.firstChild);
+                    cursor = mm.index;
+                }
+                if (cursor > 0) {
+                    frag.insertBefore(
+                        document.createTextNode(textNode.textContent.slice(0, cursor)),
+                        frag.firstChild
+                    );
+                }
+                textNode.parentNode.replaceChild(frag, textNode);
             });
         });
     }
 
+    // The server renders post content (Markdown -> HTML) itself via
+    // marked_parse(), so the .markdown-content containers already hold the
+    // correct, sanitized HTML. We must NOT re-parse them client-side: their
+    // textContent has already lost the Markdown syntax and would be flattened.
+    // Embeds are still expanded client-side by processContentEmbeds().
     function renderMarkdownContent() {
-        var containers = document.querySelectorAll('.markdown-content');
-        if (containers.length === 0) return;
-        containers.forEach(function(container) {
-            if (container.getAttribute('data-rendered') === 'true') return;
-            var raw = container.textContent || container.innerText || '';
-            if (!raw.trim()) return;
-            // Check if content is already HTML (saved by new method)
-            var html = container.innerHTML;
-            if (/<[a-z][\s\S]*>/i.test(html)) {
-                // Content is already HTML (server-sanitized); re-sanitize client-side.
-                container.innerHTML = sanitizeRendered(html);
-                container.setAttribute('data-rendered', 'true');
-                return;
-            }
-            // Content is markdown (old method), parse with marked
-            if (typeof marked === 'undefined') {
-                console.log('editbored: marked not loaded yet, retrying...');
-                setTimeout(renderMarkdownContent, 200);
-                return;
-            }
-            container.setAttribute('data-raw', raw);
-            try {
-                var rendered = marked.parse ? marked.parse(raw) : (typeof marked === 'function' ? marked(raw) : raw);
-                container.innerHTML = sanitizeRendered(rendered);
-                container.setAttribute('data-rendered', 'true');
-            } catch(e) {
-                console.error('editbored: Error rendering markdown:', e);
-                container.innerHTML = '<p>' + escapeHtml(raw).replace(/\n/g, '<br>') + '</p>';
-            }
-        });
-        // Process embeds after rendering
         setTimeout(processContentEmbeds, 100);
     }
 
     function init() {
-        findTextareas().forEach(wrapTextarea);
+        var tas = findTextareas();
+        console.log('editbored init: found', tas.length, 'textarea(s)');
+        tas.forEach(wrapTextarea);
         renderMarkdownContent();
         setTimeout(processContentEmbeds, 200);
     }

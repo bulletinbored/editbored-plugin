@@ -234,20 +234,27 @@
     width: 0%;
     transition: width 0.2s;
 }
-.editbored-editor .link-preview-wrap {
+
+/* ===== Embed wrappers — apply GLOBALLY so they look right both inside the
+   editor (.editbored-editor) and in the server-rendered public output
+   (.markdown-content / .thread-content / .post-content). The previous version
+   scoped all of these to .editbored-editor, so the public Instagram embed
+   kept the global overflow:hidden and required inner scrolling. ===== */
+
+.link-preview-wrap {
     position: relative;
     margin: 0.8em 0;
 }
-.editbored-editor .link-preview {
+.link-preview {
     border-radius: 12px;
     overflow: hidden;
 }
-.editbored-editor .link-preview--youtube {
+.link-preview--youtube {
     position: relative;
     padding-top: 56.25%;
     background: #000;
 }
-.editbored-editor .link-preview--youtube iframe {
+.link-preview--youtube iframe {
     position: absolute;
     top: 0;
     left: 0;
@@ -255,32 +262,35 @@
     height: 100%;
     border: none;
 }
-.editbored-editor .link-preview--twitter {
+.link-preview--twitter {
     background: #000;
     border-radius: 12px;
     overflow: hidden;
 }
-.editbored-editor .link-preview--instagram {
+.link-preview--instagram {
     background: #fff;
     border: 1px solid #dbdbdb;
+    /* Instagram sizes itself; without overflow:visible the global rule above
+       would clip it and force inner mouse scrolling. */
+    overflow: visible;
 }
-.editbored-editor .link-preview--facebook {
+.link-preview--facebook {
     background: #f0f2f5;
 }
-.editbored-editor .link-preview--generic {
+.link-preview--generic {
     border: 1px solid #e0e0e0;
     background: #fff;
 }
-.editbored-editor .link-preview--image img {
+.link-preview--image img {
     max-width: 100%;
     display: block;
     border-radius: 12px;
 }
-.editbored-editor .link-preview a {
+.link-preview a {
     color: #007AFF;
     text-decoration: none;
 }
-.editbored-editor .link-preview a:hover {
+.link-preview a:hover {
     text-decoration: underline;
 }
 
@@ -323,6 +333,35 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* Server-rendered social embeds (output). The Instagram/Facebook iframe from
+   the platform has a fixed height and scrolls internally; make it responsive
+   via the aspect-ratio trick so the whole post is visible without scrolling. */
+.embed-instagram,
+.embed-facebook {
+    position: relative;
+    width: 100%;
+    max-width: 540px;
+    margin: 0.8em 0;
+    border-radius: 12px;
+    overflow: hidden;
+}
+.embed-instagram {
+    /* Instagram posts are roughly 4:5 portrait; give room for captions too. */
+    aspect-ratio: 4 / 6;
+}
+.embed-facebook {
+    aspect-ratio: 16 / 9;
+}
+.embed-instagram iframe,
+.embed-facebook iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
 }
 
 /* Mention styles for rendered output */

@@ -4,6 +4,8 @@
  * Author: mlzog
  * Description: WYSIWYG Markdown editor with mentions and image upload.
  *              Saves Markdown to DB; renders server-side via bb_render_content().
+ *              Markdown-only: user HTML is never stored or trusted, so the core
+ *              can render without any HTML sanitizer.
  * License: BSD Zero Clause License
  */
 
@@ -35,7 +37,11 @@ function editbored_init() {
     $nonce = $GLOBALS['CSP_NONCE'] ?? '';
     $ebVer = function ($rel) use ($pluginUrl) {
         $f = __DIR__ . '/' . $rel;
-        return $pluginUrl . '/' . $rel . '?v=' . (file_exists($f) ? filemtime($f) : time());
+        // Use a content hash as the cache-busting version so any edit forces a
+        // fresh download. filemtime alone can be identical across rapid writes
+        // on some filesystems, leaving stale cached assets in the browser.
+        $v = file_exists($f) ? substr(md5_file($f), 0, 10) : time();
+        return $pluginUrl . '/' . $rel . '?v=' . $v;
     };
     $cssUrl = $ebVer('assets/css/editbored.css');
     $editorUrl = $ebVer('assets/js/editbored.js');
