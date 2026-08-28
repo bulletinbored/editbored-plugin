@@ -1,6 +1,6 @@
 {
     "name": "editbored",
-    "version": "2.0.4",
+    "version": "2.0.5",
     "author": "mlzog",
     "description": "WYSIWYG Markdown editor with mentions and image upload. Saves Markdown to DB; renders server-side via bb_render_content().",
     "bootstrap": "editbored.php",

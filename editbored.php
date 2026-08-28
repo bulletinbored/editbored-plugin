@@ -210,7 +210,7 @@ function editbored_render_content(string $text): string {
     // embeds/cards — but only in text segments, never inside HTML tags or
     // attributes (which would corrupt href/src values).
     $html = '<div class="markdown-content">' . bb_parse_markdown($text) . '</div>';
-    return preg_replace_callback(
+    $html = preg_replace_callback(
         '#([^<]*)(<[^>]*>)?#',
         function ($m) {
             if (!isset($m[1]) || $m[1] === '') {
@@ -232,6 +232,35 @@ function editbored_render_content(string $text): string {
                         $embed = editbored_build_link_card($url);
                     }
                     return ($embed !== '' && $embed !== null) ? $embed : htmlspecialchars($url, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                },
+                $m[1]
+            ) . ($m[2] ?? '');
+        },
+        $html
+    );
+    // Mentions last, so @ inside URLs or embed markup is never touched.
+    return editbored_render_mentions($html);
+}
+
+/**
+ * Render mentions (@username) on top of the already-rendered HTML. Only touches
+ * text segments, never HTML tags/attributes, so it cannot corrupt href/src.
+ */
+function editbored_render_mentions(string $html): string {
+    return preg_replace_callback(
+        '#([^<]*)(<[^>]*>)?#',
+        function ($m) {
+            if (!isset($m[1]) || $m[1] === '') {
+                return $m[0];
+            }
+            return preg_replace_callback(
+                '#(?<!\w)@([a-zA-Z0-9_]{2,})#',
+                function ($mentionMatch) {
+                    $username = $mentionMatch[1];
+                    $esc = function (string $s): string {
+                        return htmlspecialchars($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                    };
+                    return '<a href="' . $esc(url('profile', ['username' => $username])) . '" class="mention">@' . $esc($username) . '</a>';
                 },
                 $m[1]
             ) . ($m[2] ?? '');
