@@ -84,9 +84,9 @@
         image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>',
         code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>',
         codeblock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><polyline points="8 8 8 16"></polyline><polyline points="16 8 16 16"></polyline><line x1="10" y1="12" x2="14" y2="12"></line></svg>',
-        quote: '<span style="font-size: 16px; font-weight: bold;">"</span>',
-        mention: '<span style="font-size: 16px; font-weight: bold;">@</span>',
-        markdown: '<svg viewBox="0 0 208 128" style="width: 26px; height: 16px;"><path d="M30 98V30h20l20 25 20-25h20v68H90V59L70 84 50 59v39zm125 0l-30-33h20V30h20v35h20z" fill="currentColor" fill-rule="evenodd"/></svg>'
+        quote: '<span class="editbored-icon-quote">"</span>',
+        mention: '<span class="editbored-icon-mention">@</span>',
+        markdown: '<svg viewBox="0 0 208 128" class="editbored-icon-markdown"><path d="M30 98V30h20l20 25 20-25h20v68H90V59L70 84 50 59v39zm125 0l-30-33h20V30h20v35h20z" fill="currentColor" fill-rule="evenodd"/></svg>'
     };
 
     var toolbarConfig = [
@@ -493,7 +493,18 @@
                     var data = JSON.parse(xhr.responseText);
                     if (data.url) {
                         editor.focus();
-                        document.execCommand('insertHTML', false, '<img src="' + escapeHtml(data.url) + '" alt="' + escapeHtml(file.name) + '" style="max-width:100%;">');
+                        var img = document.createElement('img');
+                        img.src = data.url;
+                        img.alt = file.name;
+                        img.className = 'link-preview-image-img';
+                        var sel = window.getSelection();
+                        if (sel.rangeCount) {
+                            var range = sel.getRangeAt(0);
+                            range.deleteContents();
+                            range.insertNode(img);
+                        } else {
+                            editor.appendChild(img);
+                        }
                     } else if (data.error) { alert(data.error); }
                 } catch (e) { alert('Upload failed'); }
             } else { alert('Upload failed: ' + xhr.status); }
@@ -592,48 +603,49 @@
             var match = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]+)/);
             var id = match ? match[1] : '';
             if (!id) return null;
-            return '<div class="link-preview link-preview--youtube" style="position:relative;padding-top:56.25%;background:#000;border-radius:12px;overflow:hidden;">' +
-                '<iframe src="https://www.youtube.com/embed/' + id + '" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;" allowfullscreen></iframe></div>';
+            return '<div class="link-preview link-preview--youtube">' +
+                '<iframe src="https://www.youtube.com/embed/' + id + '" allowfullscreen></iframe></div>';
         }
         if (type === 'twitter') {
-            var match = url.match(/(?:twitter|x)\.com\/[a-zA-Z0-9_]+\/status\/(\d+)/);
-            var tid = match ? match[1] : '';
-            if (!tid) return null;
-            return '<div class="link-preview link-preview--twitter" style="background:#000;border-radius:12px;overflow:hidden;">' +
-                '<iframe src="https://platform.twitter.com/embed/Tweet.html?id=' + tid + '" style="border:none;width:100%;height:450px;display:block;background:#fff;"></iframe></div>';
+            return '<div class="link-preview link-preview--twitter">' +
+                '<blockquote class="twitter-tweet" data-dnt="true"><a href="' + eu + '"></a></blockquote></div>';
         }
         if (type === 'instagram') {
-            // No overflow:hidden / fixed min-height here: the Instagram embed
-            // sizes itself and a clipped box would force inner scrolling.
-            return '<div class="link-preview link-preview--instagram" style="background:#fff;border:1px solid #dbdbdb;border-radius:12px;">' +
-                '<blockquote class="instagram-media" data-instgrm-captioned data-instgrm-permalink="' + eu + '" data-instgrm-version="15" style="background:#FFF;border:0;border-radius:3px;box-shadow:0 0 1px 0 rgba(0,0,0,0.5),0 1px 10px 0 rgba(0,0,0,0.15);margin:1px;max-width:540px;min-width:326px;padding:0;width:99.375%;width:-webkit-calc(100% - 2px);width:calc(100% - 2px);">' +
-                '<div style="padding:16px;"><a href="' + eu + '" style="background:#FFFFFF;line-height:0;padding:0 0;text-align:center;text-decoration:none;width:100%;" target="_blank">' +
-                '<div style="display:flex;flex-direction:row;align-items:center;"><div style="background-color:#F4F4F4;border-radius:50%;flex-grow:0;height:40px;margin-right:14px;width:40px;"></div>' +
-                '<div style="display:flex;flex-direction:column;flex-grow:1;justify-content:center;"><div style="background-color:#F4F4F4;border-radius:4px;flex-grow:0;height:14px;margin-bottom:6px;width:100px;"></div>' +
-                '<div style="background-color:#F4F4F4;border-radius:4px;flex-grow:0;height:14px;width:60px;"></div></div></div>' +
-                '<div style="padding:19% 0;"></div><div style="display:block;height:50px;margin:0 auto 12px;width:50px;">' +
+            return '<div class="link-preview link-preview--instagram">' +
+                '<blockquote class="instagram-media" data-instgrm-captioned data-instgrm-permalink="' + eu + '" data-instgrm-version="15">' +
+                '<div class="instagram-placeholder"><div class="instagram-placeholder-inner">' +
+                '<a href="' + eu + '" class="instagram-placeholder-link" target="_blank">' +
+                '<div class="instagram-placeholder-header">' +
+                '<div class="instagram-placeholder-avatar"></div>' +
+                '<div class="instagram-placeholder-name">' +
+                '<div class="instagram-placeholder-name-line"></div>' +
+                '<div class="instagram-placeholder-name-line-short"></div>' +
+                '</div></div>' +
+                '<div class="instagram-placeholder-spacer"></div>' +
+                '<div class="instagram-placeholder-icon">' +
                 '<svg width="50px" height="50px" viewBox="0 0 60 60" version="1.1" xmlns="https://www.w3.org/2000/svg"><g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd"><g transform="translate(-511.000000, -20.000000)" fill="#000000"><g><path d="M556.869,30.41 C554.814,30.41 553.148,32.076 553.148,34.131 C553.148,36.186 554.814,37.852 556.869,37.852 C558.924,37.852 560.59,36.186 560.59,34.131 C560.59,32.076 558.924,30.41 556.869,30.41 M541,60.657 C535.114,60.657 530.342,55.887 530.342,50 C530.342,44.114 535.114,39.342 541,39.342 C546.887,39.342 551.658,44.114 551.658,50 C551.658,55.887 546.887,60.657 541,60.657 M541,33.886 C532.1,33.886 524.886,41.1 524.886,50 C524.886,58.899 532.1,66.113 541,66.113 C549.9,66.113 557.115,58.899 557.115,50 C557.115,41.1 549.9,33.886 541,33.886 M565.378,62.101 C565.244,65.022 564.756,66.606 564.346,67.663 C563.803,69.06 563.154,70.057 562.106,71.106 C561.058,72.155 560.06,72.803 558.662,73.347 C557.607,73.757 556.021,74.244 553.102,74.378 C549.944,74.521 548.997,74.552 541,74.552 C533.003,74.552 532.056,74.521 528.898,74.378 C525.979,74.244 524.393,73.757 523.338,73.347 C521.94,72.803 520.942,72.155 519.894,71.106 C518.846,70.057 518.197,69.06 517.654,67.663 C517.244,66.606 516.755,65.022 516.623,62.101 C516.479,58.943 516.448,57.996 516.448,50 C516.448,42.003 516.479,41.056 516.623,37.899 C516.755,34.978 517.244,33.391 517.654,32.338 C518.197,30.938 518.846,29.942 519.894,28.894 C520.942,27.846 521.94,27.196 523.338,26.654 C524.393,26.244 525.979,25.756 528.898,25.623 C532.057,25.479 533.004,25.448 541,25.448 C548.997,25.448 549.943,25.479 553.102,25.623 C556.021,25.756 557.607,26.244 558.662,26.654 C560.06,27.196 561.058,27.846 562.106,28.894 C563.154,29.942 563.803,30.938 564.346,32.338 C564.756,33.391 565.244,34.978 565.378,37.899 C565.522,41.056 565.552,42.003 565.552,50 C565.552,57.996 565.522,58.943 565.378,62.101"></path></g></g></g></svg></div>' +
-                '<div style="padding-top:8px;"><div style="color:#3897f0;font-family:Arial,sans-serif;font-size:14px;font-style:normal;font-weight:550;line-height:18px;">Visualizza questo post su Instagram</div></div>' +
-                '<div style="padding:12.5% 0;"></div></a></div></blockquote></div>';
+                '<div class="instagram-placeholder-cta"><div class="instagram-placeholder-cta-text">Visualizza questo post su Instagram</div></div>' +
+                '<div class="instagram-placeholder-bottom-spacer"></div></a></div></blockquote></div>';
         }
         if (type === 'facebook') {
-            var fbHref = url.replace(/\?.*$/, '');
-            return '<div class="link-preview link-preview--facebook" style="min-height:200px;background:#f0f2f5;border-radius:12px;overflow:hidden;">' +
-                '<iframe src="https://www.facebook.com/plugins/post.php?href=' + encodeURIComponent(fbHref) + '&width=540&show_text=true&appId&height=540" style="border:none;overflow:hidden;width:100%;min-height:540px;display:block;background:#fff;" scrolling="no" frameborder="0" allowfullscreen allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe></div>';
+            return '<div class="link-preview link-preview--facebook">' +
+                '<iframe src="https://www.facebook.com/plugins/post.php?href=' + encodeURIComponent(url) + '&show_text=true&width=500"></iframe></div>';
         }
         if (type === 'image') {
-            return '<div class="link-preview link-preview--image" style="border-radius:12px;overflow:hidden;margin:0.6em 0;">' +
-                '<img src="' + eu + '" alt="Image" style="max-width:100%;display:block;border-radius:12px;"></div>';
+            return '<div class="link-preview link-preview--image">' +
+                '<img src="' + eu + '" alt="Image" class="link-preview-image-img"></div>';
         }
         if (type === 'generic') {
             var domain = '';
             try { domain = new URL(url).hostname; } catch(e) { domain = url.replace(/^https?:\/\//, '').split('/')[0]; }
             var favicon = 'https://www.google.com/s2/favicons?domain=' + encodeURIComponent(domain) + '&sz=32';
-            return '<div class="link-preview link-preview--generic" style="border:1px solid #e0e0e0;border-radius:12px;overflow:hidden;background:#fff;">' +
-                '<a href="' + eu + '" target="_blank" style="display:flex;align-items:center;gap:12px;padding:12px 16px;text-decoration:none;color:inherit;">' +
-                '<img src="' + favicon + '" alt="" style="width:32px;height:32px;border-radius:6px;flex-shrink:0;background:#f5f5f5;" onerror="this.style.display=\'none\'">' +
-                '<div style="min-width:0;"><div style="font-weight:600;font-size:14px;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(domain) + '</div>' +
-                '<div style="font-size:12px;color:#888;margin-top:2px;">' + escapeHtml(domain) + '</div></div></a></div>';
+            return '<div class="link-preview link-preview--generic">' +
+                '<a href="' + eu + '" target="_blank" class="link-preview-card-link">' +
+                '<img src="' + favicon + '" alt="" class="link-preview-card-favicon" onerror="this.style.display=\'none\'">' +
+                '<div class="link-preview-card-content">' +
+                '<div class="link-preview-card-title">' + escapeHtml(domain) + '</div>' +
+                '<div class="link-preview-card-subtitle">' + escapeHtml(domain) + '</div>' +
+                '</div></a></div>';
         }
         return null;
     }
@@ -645,15 +657,14 @@
         var wrapper = document.createElement('div');
         wrapper.className = 'link-preview-wrap';
         wrapper.setAttribute('data-url', url);
-        wrapper.style.cssText = 'position:relative;margin:0.8em 0;';
         if (withRemoveBtn) wrapper.contentEditable = 'false';
         wrapper.innerHTML = embedHtml;
 
         if (withRemoveBtn) {
             var removeBtn = document.createElement('button');
             removeBtn.type = 'button';
+            removeBtn.className = 'link-preview-remove-btn';
             removeBtn.innerHTML = '✕';
-            removeBtn.style.cssText = 'position:absolute;top:-10px;right:-10px;width:28px;height:28px;border-radius:50%;background:#ff3b30;border:2px solid #fff;color:#fff;font-size:14px;font-weight:bold;cursor:pointer;z-index:100;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.3);line-height:1;';
             removeBtn.title = 'Remove preview';
             removeBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
@@ -723,10 +734,7 @@
                     var img = document.createElement('img');
                     img.src = url;
                     img.alt = '';
-                    img.style.maxWidth = '100%';
-                    img.style.borderRadius = '12px';
-                    img.style.display = 'block';
-                    img.style.margin = '0.6em 0';
+                    img.className = 'link-preview-image-img';
                     frag.insertBefore(img, frag.firstChild);
                     lastEmbed = img;
                 } else {
@@ -790,6 +798,13 @@
             setTimeout(function() {
                 if (typeof FB !== 'undefined') {
                     FB.XFBML.parse(wrapper);
+                }
+            }, 500);
+        }
+        if (type === 'twitter') {
+            setTimeout(function() {
+                if (typeof twttr !== 'undefined' && twttr.widgets) {
+                    twttr.widgets.load(wrapper);
                 }
             }, 500);
         }
@@ -966,13 +981,43 @@
         });
     }
 
-    // The server renders post content (Markdown -> HTML) itself via
-    // marked_parse(), so the .markdown-content containers already hold the
-    // correct, sanitized HTML. We must NOT re-parse them client-side: their
-    // textContent has already lost the Markdown syntax and would be flattened.
-    // Embeds are still expanded client-side by processContentEmbeds().
+    // Process embeds already rendered by server (blockquote.twitter-tweet, div.fb-post,
+    // blockquote.instagram-media) and activate them via platform SDKs.
+    function processServerEmbeds() {
+        var containers = document.querySelectorAll('.thread-content, .post-content, .markdown-content');
+        containers.forEach(function(container) {
+            // Process Twitter embeds
+            container.querySelectorAll('.twitter-tweet').forEach(function(tweet) {
+                if (tweet.dataset.editboredProcessed) return;
+                tweet.dataset.editboredProcessed = '1';
+                var wrapper = tweet.closest('.embed-twitter');
+                if (wrapper) {
+                    processSocialEmbeds(wrapper, 'twitter');
+                }
+            });
+            // Process Facebook embeds
+            container.querySelectorAll('.fb-post').forEach(function(post) {
+                if (post.dataset.editboredProcessed) return;
+                post.dataset.editboredProcessed = '1';
+                var wrapper = post.closest('.embed-facebook');
+                if (wrapper) {
+                    processSocialEmbeds(wrapper, 'facebook');
+                }
+            });
+            // Process Instagram embeds
+            container.querySelectorAll('.instagram-media').forEach(function(ig) {
+                if (ig.dataset.editboredProcessed) return;
+                ig.dataset.editboredProcessed = '1';
+                var wrapper = ig.closest('.embed-instagram');
+                if (wrapper) {
+                    processSocialEmbeds(wrapper, 'instagram');
+                }
+            });
+        });
+    }
     function renderMarkdownContent() {
-        setTimeout(processContentEmbeds, 100);
+        setTimeout(processServerEmbeds, 100);
+        setTimeout(processContentEmbeds, 150);
     }
 
     function init() {
@@ -980,7 +1025,8 @@
         console.log('editbored init: found', tas.length, 'textarea(s)');
         tas.forEach(wrapTextarea);
         renderMarkdownContent();
-        setTimeout(processContentEmbeds, 200);
+        setTimeout(processServerEmbeds, 200);
+        setTimeout(processContentEmbeds, 300);
     }
 
     if (document.readyState === 'loading') {

@@ -42,6 +42,15 @@
     width: 18px;
     height: 18px;
 }
+.editbored-icon-quote,
+.editbored-icon-mention {
+    font-size: 16px;
+    font-weight: bold;
+}
+.editbored-icon-markdown {
+    width: 26px;
+    height: 16px;
+}
 .editbored-toolbar-divider {
     width: 1px;
     height: 24px;
@@ -294,13 +303,182 @@
     text-decoration: underline;
 }
 
+/* ===== Editor-only embed styles (replaces inline styles for CSP compliance) ===== */
+
+/* Remove button on editor embeds */
+.link-preview-remove-btn {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #ff3b30;
+    border: 2px solid #fff;
+    color: #fff;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    line-height: 1;
+    padding: 0;
+}
+
+.link-preview-remove-btn:hover {
+    background: #e0352b;
+}
+
+/* Instagram placeholder styles (editor) */
+.instagram-placeholder {
+    background: #FFF;
+    border: 0;
+    border-radius: 3px;
+    box-shadow: 0 0 1px 0 rgba(0,0,0,0.5), 0 1px 10px 0 rgba(0,0,0,0.15);
+    margin: 1px;
+    max-width: 540px;
+    min-width: 326px;
+    padding: 0;
+    width: 99.375%;
+    width: -webkit-calc(100% - 2px);
+    width: calc(100% - 2px);
+}
+
+.instagram-placeholder-inner {
+    padding: 16px;
+}
+
+.instagram-placeholder-link {
+    background: #FFFFFF;
+    line-height: 0;
+    padding: 0 0;
+    text-align: center;
+    text-decoration: none;
+    width: 100%;
+}
+
+.instagram-placeholder-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.instagram-placeholder-avatar {
+    background-color: #F4F4F4;
+    border-radius: 50%;
+    flex-grow: 0;
+    height: 40px;
+    margin-right: 14px;
+    width: 40px;
+}
+
+.instagram-placeholder-name {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    justify-content: center;
+}
+
+.instagram-placeholder-name-line {
+    background-color: #F4F4F4;
+    border-radius: 4px;
+    flex-grow: 0;
+    height: 14px;
+    margin-bottom: 6px;
+    width: 100px;
+}
+
+.instagram-placeholder-name-line-short {
+    background-color: #F4F4F4;
+    border-radius: 4px;
+    flex-grow: 0;
+    height: 14px;
+    width: 60px;
+}
+
+.instagram-placeholder-spacer {
+    padding: 19% 0;
+}
+
+.instagram-placeholder-icon {
+    display: block;
+    height: 50px;
+    margin: 0 auto 12px;
+    width: 50px;
+}
+
+.instagram-placeholder-cta {
+    padding-top: 8px;
+}
+
+.instagram-placeholder-cta-text {
+    color: #3897f0;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    font-style: normal;
+    font-weight: 550;
+    line-height: 18px;
+}
+
+.instagram-placeholder-bottom-spacer {
+    padding: 12.5% 0;
+}
+
+/* Generic link card styles (editor) */
+.link-preview-card-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    text-decoration: none;
+    color: inherit;
+}
+
+.link-preview-card-favicon {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: #f5f5f5;
+}
+
+.link-preview-card-content {
+    min-width: 0;
+}
+
+.link-preview-card-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: #1a1a1a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.link-preview-card-subtitle {
+    font-size: 12px;
+    color: #888;
+    margin-top: 2px;
+}
+
+/* Image embed in editor */
+.link-preview-image-img {
+    max-width: 100%;
+    display: block;
+    border-radius: 12px;
+    margin: 0.6em 0;
+}
+
 /* Server-rendered generic link card (output, not editor) */
 .embed-link {
     margin: 0.8em 0;
 }
 .embed-link a {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 12px;
     padding: 12px 16px;
     border: 1px solid #e0e0e0;
@@ -308,7 +486,6 @@
     background: #fff;
     text-decoration: none;
     color: inherit;
-    flex-wrap: wrap;
 }
 .embed-link a:hover {
     border-color: #bdbdbd;
@@ -320,26 +497,41 @@
     flex-shrink: 0;
     background: #f5f5f5;
 }
-.embed-link-domain {
+.embed-link-content {
+    min-width: 0;
+    flex: 1;
+}
+.embed-link-title {
     font-weight: 600;
     font-size: 14px;
     color: #1a1a1a;
+    line-height: 1.4;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    display: block;
 }
-.embed-link-url {
+.embed-link-preview {
     font-size: 12px;
-    color: #888;
-    margin-left: auto;
-    max-width: 60%;
-    white-space: nowrap;
+    color: #666;
+    margin-top: 2px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    display: block;
+}
+.embed-link-domain {
+    font-size: 11px;
+    color: #888;
+    margin-top: 4px;
 }
 
-/* Server-rendered social embeds (output). The Instagram/Facebook iframe from
-   the platform has a fixed height and scrolls internally; make it responsive
-   via the aspect-ratio trick so the whole post is visible without scrolling. */
-.embed-instagram,
-.embed-facebook {
+/* Server-rendered social embeds (output) */
+.embed-twitter,
+.embed-facebook,
+.embed-instagram {
     position: relative;
     width: 100%;
     max-width: 540px;
@@ -347,21 +539,21 @@
     border-radius: 12px;
     overflow: hidden;
 }
-.embed-instagram {
-    /* Instagram posts are roughly 4:5 portrait; give room for captions too. */
-    aspect-ratio: 4 / 6;
-}
-.embed-facebook {
-    aspect-ratio: 16 / 9;
-}
-.embed-instagram iframe,
-.embed-facebook iframe {
-    position: absolute;
-    top: 0;
-    left: 0;
+.embed-twitter iframe,
+.embed-facebook iframe,
+.embed-instagram iframe {
     width: 100%;
-    height: 100%;
     border: none;
+    display: block;
+}
+.embed-twitter iframe {
+    min-height: 300px;
+}
+.embed-facebook iframe {
+    min-height: 291px;
+}
+.embed-instagram iframe {
+    min-height: 400px;
 }
 
 /* Mention styles for rendered output */

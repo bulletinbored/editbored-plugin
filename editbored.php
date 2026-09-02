@@ -9,6 +9,8 @@
  * License: BSD Zero Clause License
  */
 
+require_once __DIR__ . '/LinkCardCache.php';
+
 function editbored_init() {
     global $pluginManager;
 
@@ -59,6 +61,7 @@ function editbored_init() {
     $footer = '<script src="' . $markedUrl . '" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
     $footer .= '<script async src="https://www.instagram.com/embed.js" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
     $footer .= '<div id="fb-root"></div><script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v21.0" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
+    $footer .= '<script async src="https://platform.twitter.com/widgets.js" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
     $footer .= '<script src="' . $editorUrl . '" nonce="' . htmlspecialchars($nonce, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
 
     $pluginManager->addHook('frontend_before_render', function () use ($head) {
@@ -161,24 +164,84 @@ function editbored_build_embed(string $url): ?string {
         $src = 'https://' . $domain . '/embed/' . $id;
         return '<div class="embed embed-youtube">'
             . '<iframe src="' . $esc($src) . '" title="Embedded video" '
-            . 'frameborder="0" allowfullscreen loading="lazy"></iframe></div>';
+            . 'allowfullscreen loading="lazy"></iframe></div>';
     }
 
     if (in_array($bare, ['twitter.com', 'x.com'], true)) {
         return '<div class="embed embed-twitter">'
-            . '<iframe src="https://platform.twitter.com/embed/Tweet.html?url='
-            . urlencode($url) . '" title="Embedded post" '
-            . 'frameborder="0" loading="lazy"></iframe></div>';
+            . '<blockquote class="twitter-tweet" data-dnt="true">'
+            . '<a href="' . $esc($url) . '"></a></blockquote></div>';
     }
 
     if (in_array($bare, ['facebook.com', 'instagram.com'], true)) {
-        $src = 'https://www.' . $bare . '/plugins/embed?url=' . urlencode($url);
-        return '<div class="embed embed-' . ($bare === 'instagram.com' ? 'instagram' : 'facebook') . '">'
-            . '<iframe src="' . $esc($src) . '" title="Embedded post" '
-            . 'frameborder="0" loading="lazy"></iframe></div>';
+        if ($bare === 'instagram.com') {
+            return '<div class="embed embed-instagram">'
+                . '<iframe src="https://www.instagram.com/p/' . urlencode(basename(rtrim(parse_url($url, PHP_URL_PATH), '/'))) . '/embed" '
+                . 'title="Embedded post" loading="lazy"></iframe></div>';
+        }
+        return '<div class="embed embed-facebook">'
+            . '<iframe src="https://www.facebook.com/plugins/post.php?href='
+            . urlencode($url) . '&show_text=true&width=500" '
+            . 'title="Embedded post" loading="lazy"></iframe></div>';
     }
 
     return null;
+}
+
+// In-memory cache instance for the current request.
+function editbored_get_cache(): ?LinkCardCache {
+    static $cache = null;
+    if ($cache === null && class_exists('LinkCardCache')) {
+        $cache = new LinkCardCache();
+    }
+    return $cache;
+}
+
+// Helper: fetch a remote page for link-card metadata (with caching).
+function editbored_fetch_page(string $url): ?string {
+    $url = trim($url);
+    $cache = editbored_get_cache();
+    if ($cache !== null) {
+        $cached = $cache->get($url);
+        if ($cached !== null) {
+            return $cached['body'] ?? null;
+        }
+    }
+    $body = null;
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 3,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; ForumBot/1.0)',
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_MAXREDIRS => 2,
+        ]);
+        $body = curl_exec($ch);
+        curl_close($ch);
+        if ($body === false || !is_string($body)) {
+            $body = null;
+        }
+    } else {
+        $ctx = stream_context_create(['http' => [
+            'method' => 'GET',
+            'header' => "User-Agent: Mozilla/5.0\r\n",
+            'timeout' => 3,
+            'follow_location' => 1,
+            'max_redirects' => 2,
+        ]]);
+        $body = @file_get_contents($url, false, $ctx);
+        if ($body === false) {
+            $body = null;
+        }
+    }
+    if ($body !== null && $cache !== null) {
+        $cache->set($url, ['body' => $body]);
+    }
+    return $body;
 }
 
 // Safe generic link card for any http(s) URL.
@@ -192,11 +255,29 @@ function editbored_build_link_card(string $url): string {
         return htmlspecialchars($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     };
     $favicon = 'https://www.google.com/s2/favicons?domain=' . rawurlencode($host) . '&sz=64';
+    $title = $host;
+    $preview = '';
+    $body = editbored_fetch_page($url);
+    if ($body !== null) {
+        if (preg_match('/<title[^>]*>(.*?)<\/title>/is', $body, $m)) {
+            $title = html_entity_decode(trim(strip_tags($m[1])), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if ($title === '') {
+                $title = $host;
+            }
+        }
+        if (preg_match('/<meta[^>]+name=["\']description["\'][^>]*content=["\']([^"\']+)["\']/i', $body, $m)) {
+            $preview = html_entity_decode(trim($m[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
+    }
+    $preview = mb_substr($preview, 0, 120);
     return '<div class="embed embed-link">'
         . '<a href="' . $esc($url) . '" target="_blank" rel="noopener noreferrer">'
         . '<img src="' . $esc($favicon) . '" alt="" loading="lazy" class="embed-link-favicon">'
+        . '<span class="embed-link-content">'
+        . '<span class="embed-link-title">' . $esc($title) . '</span>'
+        . ($preview !== '' ? '<span class="embed-link-preview">' . $esc($preview) . '</span>' : '')
         . '<span class="embed-link-domain">' . $esc($host) . '</span>'
-        . '<span class="embed-link-url">' . $esc($url) . '</span>'
+        . '</span>'
         . '</a></div>';
 }
 
